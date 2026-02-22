@@ -2,6 +2,11 @@
 
 A **JSON-RPC 2.0 server** that wraps **Claude Code** capabilities — the Claude equivalent of the OpenAI Codex App Server.
 
+```
+npm i claude-app-server
+```
+
+
 No API key required. Authentication is handled by the `claude` CLI (`claude auth`).
 
 Clients communicate over **stdio** (default) or **WebSocket**, using newline-delimited JSON (NDJSON).
