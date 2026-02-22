@@ -52,15 +52,15 @@ function generatePairKey(): string {
 
 function printStartBanner(port: number, pairKey: string): void {
   const lan = getLanIp();
-  const lanUrl = lan ? `ws://${lan}:${port}?key=${pairKey}` : null;
-  const localUrl = `ws://localhost:${port}?key=${pairKey}`;
+  const lanUrl = lan ? `wss://${lan}:${port}?key=${pairKey}` : null;
+  const localUrl = `wss://localhost:${port}?key=${pairKey}`;
 
   process.stderr.write("\n");
   process.stderr.write("  claude-app-server  ·  WebSocket\n");
   process.stderr.write("  ─────────────────────────────────\n");
   process.stderr.write(`  Local:    ${localUrl}\n`);
   if (lan) {
-    process.stderr.write(`  Network:  ws://${lan}:${port}\n`);
+    process.stderr.write(`  Network:  wss://${lan}:${port}\n`);
   }
   process.stderr.write(`  Pair Key: ${pairKey}\n`);
   process.stderr.write("\n");

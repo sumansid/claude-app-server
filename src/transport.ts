@@ -6,8 +6,10 @@
  */
 
 import * as readline from "readline";
+import * as https from "https";
 import { URL } from "url";
 import { WebSocketServer, WebSocket } from "ws";
+import selfsigned from "selfsigned";
 import { parseLine } from "./protocol.js";
 import type { RpcIncoming } from "./protocol.js";
 import type { ConnectionState } from "./types.js";
@@ -64,15 +66,24 @@ export function startWebSocket(
   port: number,
   options: WsOptions,
 ): void {
-  const wss = new WebSocketServer({ port });
+  // Generate a self-signed certificate for TLS
+  const attrs = [{ name: "commonName", value: "localhost" }];
+  const pems = selfsigned.generate(attrs, { days: 1 });
+
+  const httpsServer = https.createServer({
+    key: pems.private,
+    cert: pems.cert,
+  });
+
+  const wss = new WebSocketServer({ server: httpsServer });
 
   wss.on("connection", (ws: WebSocket, req) => {
     // ─── Pair key validation ──────────────────────────────────────────
-    const reqUrl = new URL(req.url ?? "/", `http://localhost:${port}`);
+    const reqUrl = new URL(req.url ?? "/", `https://localhost:${port}`);
     const clientKey = reqUrl.searchParams.get("key");
     if (options.debug) {
       process.stderr.write(
-        `[debug] ws connection req.url=${req.url} clientKey=${clientKey} expected=${options.pairKey}\n`,
+        `[debug] wss connection req.url=${req.url} clientKey=${clientKey} expected=${options.pairKey}\n`,
       );
     }
     if (clientKey !== options.pairKey) {
@@ -95,7 +106,9 @@ export function startWebSocket(
     });
   });
 
-  process.stderr.write(
-    `[claude-app-server] listening on ws://0.0.0.0:${port} (use WSS for secure connections)\n `,
-  ); // change to WSS later
+  httpsServer.listen(port, () => {
+    process.stderr.write(
+      `[claude-app-server] listening on wss://0.0.0.0:${port}\n`,
+    );
+  });
 }

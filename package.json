@@ -2,20 +2,42 @@
   "name": "claude-app-server",
   "version": "1.0.0",
   "description": "Claude Code App Server — A JSON-RPC 2.0 server wrapping Claude Code capabilities. Equivalent to the OpenAI Codex App Server.",
+  "license": "MIT",
+  "type": "commonjs",
   "main": "dist/index.js",
   "bin": {
     "claude-app-server": "dist/index.js"
   },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sumansid/claude-app-server.git"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "app-server",
+    "json-rpc",
+    "websocket",
+    "ai",
+    "cli"
+  ],
+  "author": "Suman Sigdel",
   "packageManager": "pnpm@10.15.0",
   "scripts": {
     "build": "tsc && chmod +x dist/index.js",
     "start": "node dist/index.js start",
     "start:ws": "node dist/index.js --transport ws --port 3284",
     "dev": "pnpm exec ts-node src/index.ts",
-    "dev:ws": "pnpm exec ts-node src/index.ts --transport ws --port 3284"
+    "dev:ws": "pnpm exec ts-node src/index.ts --transport ws --port 3284",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "qrcode-terminal": "^0.12.0",
+    "selfsigned": "^2.4.1",
     "uuid": "^11.0.0",
     "ws": "^8.18.0"
   },
