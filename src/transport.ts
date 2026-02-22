@@ -6,6 +6,7 @@
  */
 
 import * as readline from "readline";
+import { URL } from "url";
 import { WebSocketServer, WebSocket } from "ws";
 import { parseLine } from "./protocol.js";
 import type { RpcIncoming } from "./protocol.js";
@@ -40,7 +41,7 @@ export function startStdio(server: ClaudeAppServer): void {
 
   rl.on("line", (line) => {
     const msg = parseLine(line);
-    if (msg) dispatch(msg, conn, server).catch(console.error);
+    if (msg) dispatch(msg, conn, server).catch(() => {});
   });
 
   rl.on("close", () => process.exit(0));
@@ -50,19 +51,40 @@ export function startStdio(server: ClaudeAppServer): void {
 
 // ─── WebSocket transport ──────────────────────────────────────────────────────
 
-export function startWebSocket(server: ClaudeAppServer, port: number): void {
+export interface WsOptions {
+  pairKey: string;
+}
+
+export function startWebSocket(
+  server: ClaudeAppServer,
+  port: number,
+  options: WsOptions,
+): void {
   const wss = new WebSocketServer({ port });
 
-  wss.on("connection", (ws: WebSocket) => {
+  wss.on("connection", (ws: WebSocket, req) => {
+    // ─── Pair key validation ──────────────────────────────────────────
+    const reqUrl = new URL(req.url ?? "/", `http://localhost:${port}`);
+    const clientKey = reqUrl.searchParams.get("key");
+    if (clientKey !== options.pairKey) {
+      ws.close(4401, "Invalid pair key");
+      return;
+    }
+
     const conn = makeConnection((msg) => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+      if (ws.readyState !== WebSocket.OPEN) return;
+      try {
+        ws.send(JSON.stringify(msg));
+      } catch {
+        // Socket closed between readyState check and send; ignore
+      }
     });
 
     ws.on("message", (data) => {
       const msg = parseLine(data.toString());
-      if (msg) dispatch(msg, conn, server).catch(console.error);
+      if (msg) dispatch(msg, conn, server).catch(() => {});
     });
   });
 
-  process.stderr.write(`[claude-app-server] listening on ws://localhost:${port}\n`);
+  process.stderr.write(`[claude-app-server] listening on ws://0.0.0.0:${port}\n`);
 }

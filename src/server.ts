@@ -14,9 +14,23 @@
  *   Discovery: model/list    skills/list    app/list
  */
 
-import { spawn } from "child_process";
+import { execFileSync, spawn } from "child_process";
+import * as os from "os";
 import * as readline from "readline";
 import { v4 as uuid } from "uuid";
+
+// Resolve the full path to the claude binary once at startup so that spawn()
+// can find it even when ~/.local/bin is not in the inherited PATH.
+function resolveClaude(): string {
+  for (const cmd of ["which", "/usr/bin/which"]) {
+    try {
+      return execFileSync(cmd, ["claude"], { encoding: "utf-8" }).trim();
+    } catch { /* try next */ }
+  }
+  return "claude"; // fall back; spawn will throw a clear error if not found
+}
+
+const CLAUDE_BIN = resolveClaude();
 
 import {
   ok, rpcErr, notif,
@@ -72,6 +86,17 @@ function serializeTurn(turn: Turn) {
 
 export class ClaudeAppServer {
   private threads = new Map<string, Thread>();
+  private claudePath: string;
+  private debug: boolean;
+
+  constructor(claudePath: string, debug = false) {
+    this.claudePath = claudePath;
+    this.debug = debug;
+  }
+
+  private log(...args: unknown[]): void {
+    if (this.debug) process.stderr.write("[debug] " + args.join(" ") + "\n");
+  }
 
   // ── Entry point ────────────────────────────────────────────────────────────
 
@@ -135,7 +160,11 @@ export class ClaudeAppServer {
 
   private threadStart(params: unknown): unknown {
     const p = (params ?? {}) as { cwd?: string; permission_mode?: PermissionMode };
-    const thread = createThread(p.cwd ?? process.cwd(), p.permission_mode ?? "default");
+    let cwd = p.cwd ?? process.cwd();
+    // Expand ~ to the user's home directory (Node spawn doesn't do this)
+    if (cwd === "~") cwd = os.homedir();
+    else if (cwd.startsWith("~/")) cwd = os.homedir() + cwd.slice(1);
+    const thread = createThread(cwd, p.permission_mode ?? "default");
     this.threads.set(thread.id, thread);
     return { thread_id: thread.id, created_at: thread.created_at };
   }
@@ -288,21 +317,45 @@ export class ClaudeAppServer {
     model?: string,
   ): Promise<void> {
     const args = this.buildClaudeArgs(thread, model);
-    const proc = spawn("claude", args, {
+    this.log(`spawn: ${this.claudePath} ${args.join(" ")}`);
+    this.log(`cwd: ${thread.cwd}`);
+
+    const proc = spawn(this.claudePath, args, {
       cwd:   thread.cwd,
       stdio: ["pipe", "pipe", "pipe"],
       env:   { ...process.env, CLAUDECODE: undefined } as NodeJS.ProcessEnv,
     });
     turn.process = proc;
 
+    // Register exit/error promise BEFORE reading stdout so we never miss
+    // early events (e.g. spawn failures where 'error' fires immediately).
+    let spawnError: Error | undefined;
+    const exitPromise = new Promise<number | null>((resolve) => {
+      proc.on("exit", (code) => { this.log(`exit code: ${code}`); resolve(code); });
+      proc.on("error", (err: Error) => {
+        this.log(`proc error: ${err}`);
+        spawnError = err;
+        resolve(null);
+      });
+    });
+
     // Write user content to stdin, then close it
     const stdinContent = turn.user_content;
-    proc.stdin.write(stdinContent, "utf-8");
-    proc.stdin.end();
+    this.log(`stdin: ${JSON.stringify(stdinContent)}`);
+    try {
+      proc.stdin.write(stdinContent, "utf-8");
+      proc.stdin.end();
+    } catch {
+      // stdin may be unusable if spawn failed; ignore
+    }
 
     // Capture stderr for error reporting
     let stderrBuf = "";
-    proc.stderr.on("data", (d: Buffer) => { stderrBuf += d.toString(); });
+    proc.stderr?.on("data", (d: Buffer) => {
+      const text = d.toString();
+      stderrBuf += text;
+      this.log(`stderr: ${text.trimEnd()}`);
+    });
 
     // Abort → kill the subprocess
     turn.abortController.signal.addEventListener("abort", () => {
@@ -319,6 +372,7 @@ export class ClaudeAppServer {
     for await (const line of rl) {
       const trimmed = line.trim();
       if (!trimmed) continue;
+      this.log(`stdout: ${trimmed}`);
 
       let event: ClaudeStreamEvent;
       try { event = JSON.parse(trimmed) as ClaudeStreamEvent; } catch { continue; }
@@ -326,14 +380,17 @@ export class ClaudeAppServer {
       this.processClaudeEvent(event, thread, turn, conn, partialText, partialThink);
     }
 
-    // Wait for process to exit
-    const exitCode = await new Promise<number | null>((resolve) => {
-      proc.on("exit", resolve);
-      proc.on("error", () => resolve(null));
-    });
+    // Wait for process to exit (listeners already registered above)
+    const exitCode = await exitPromise;
 
-    // Treat null (killed), 0, and 130 (SIGINT) as OK
+    // Treat 0 and 130 (SIGINT) as OK; spawn errors and non-zero exits are failures
     const aborted = turn.abortController.signal.aborted;
+    if (!aborted && spawnError) {
+      throw new Error(
+        `Failed to spawn claude: ${spawnError.message}` +
+        (stderrBuf ? `\nstderr: ${stderrBuf.slice(0, 500)}` : "")
+      );
+    }
     if (!aborted && exitCode !== null && exitCode !== 0 && exitCode !== 130) {
       throw new Error(
         `claude exited with code ${exitCode}` +
@@ -501,6 +558,15 @@ export class ClaudeAppServer {
           turn.status = "error";
           turn.error  = event.error ?? "unknown error";
         }
+
+        // Forward permission denials so the client can show approval UI
+        if (event.permission_denials && event.permission_denials.length > 0) {
+          conn.send(notif("turn/permission_denied", {
+            turn_id:    turn.id,
+            thread_id:  thread.id,
+            denials:    event.permission_denials,
+          }));
+        }
         break;
       }
     }
@@ -535,4 +601,4 @@ type ClaudeStreamEvent =
   | { type: "system";    subtype: string; session_id?: string; cwd?: string; tools?: string[]; model?: string; permissionMode?: string }
   | { type: "assistant"; message: ClaudeMessage; is_partial?: boolean; session_id?: string }
   | { type: "user";      message: ClaudeMessage; session_id?: string }
-  | { type: "result";    subtype: string; session_id?: string; error?: string; result?: string; cost_usd?: number; is_error?: boolean };
+  | { type: "result";    subtype: string; session_id?: string; error?: string; result?: string; cost_usd?: number; is_error?: boolean; permission_denials?: { tool_name: string; tool_use_id: string; tool_input?: unknown }[] };
