@@ -37,7 +37,10 @@ export function startStdio(server: ClaudeAppServer): void {
     process.stdout.write(JSON.stringify(msg) + "\n");
   });
 
-  const rl = readline.createInterface({ input: process.stdin, terminal: false });
+  const rl = readline.createInterface({
+    input: process.stdin,
+    terminal: false,
+  });
 
   rl.on("line", (line) => {
     const msg = parseLine(line);
@@ -53,6 +56,7 @@ export function startStdio(server: ClaudeAppServer): void {
 
 export interface WsOptions {
   pairKey: string;
+  debug?: boolean;
 }
 
 export function startWebSocket(
@@ -66,6 +70,11 @@ export function startWebSocket(
     // ─── Pair key validation ──────────────────────────────────────────
     const reqUrl = new URL(req.url ?? "/", `http://localhost:${port}`);
     const clientKey = reqUrl.searchParams.get("key");
+    if (options.debug) {
+      process.stderr.write(
+        `[debug] ws connection req.url=${req.url} clientKey=${clientKey} expected=${options.pairKey}\n`,
+      );
+    }
     if (clientKey !== options.pairKey) {
       ws.close(4401, "Invalid pair key");
       return;
@@ -86,5 +95,7 @@ export function startWebSocket(
     });
   });
 
-  process.stderr.write(`[claude-app-server] listening on ws://0.0.0.0:${port}\n`);
+  process.stderr.write(
+    `[claude-app-server] listening on ws://0.0.0.0:${port} (use WSS for secure connections)\n `,
+  ); // change to WSS later
 }

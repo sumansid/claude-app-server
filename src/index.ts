@@ -149,7 +149,7 @@ function main() {
     if (showQr) {
       printStartBanner(port, pairKey);
     }
-    startWebSocket(server, port, { pairKey });
+    startWebSocket(server, port, { pairKey, debug });
   } else {
     startStdio(server);
   }
