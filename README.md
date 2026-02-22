@@ -64,8 +64,18 @@ Scan the QR code from any device on the same Wi-Fi to connect.
 |---------|-----------|-------|
 | `claude-app-server start` | WebSocket :3284 | Shows QR code, binds to all interfaces |
 | `claude-app-server start --port N` | WebSocket :N | Custom port |
+| `claude-app-server start --no-tls` | WebSocket :3284 | Plain `ws://` (no TLS) |
 | `claude-app-server --transport ws` | WebSocket :3284 | No QR code |
+| `claude-app-server --transport ws --no-tls` | WebSocket :3284 | Plain `ws://`, no QR code |
 | `claude-app-server` | stdio | For piped/programmatic use |
+
+### `--no-tls`
+
+By default, WebSocket mode uses a self-signed TLS certificate (`wss://`). Pass `--no-tls` to disable TLS and use plain `ws://` instead. This is useful for local development or when TLS is handled by a reverse proxy.
+
+```bash
+claude-app-server start --no-tls
+```
 
 ---
 
