@@ -7,10 +7,11 @@
  *
  * Usage:
  *   claude-app-server                          # stdio (default)
- *   claude-app-server start                    # WebSocket on port 3284 + QR code
+ *   claude-app-server start                    # wss on port 3284 + QR code
+ *   claude-app-server start --no-tls           # ws (plain, no TLS) on port 3284
  *   claude-app-server start --port 4000        # custom port
  *   claude-app-server --transport ws           # WebSocket (legacy flags)
- *   claude-app-server --transport ws --port 4000
+ *   claude-app-server --transport ws --no-tls  # plain ws (no TLS)
  */
 
 import { ClaudeAppServer } from "./server.js";
@@ -50,17 +51,18 @@ function generatePairKey(): string {
 
 // ─── QR display ───────────────────────────────────────────────────────────────
 
-function printStartBanner(port: number, pairKey: string): void {
+function printStartBanner(port: number, pairKey: string, tls: boolean): void {
   const lan = getLanIp();
-  const lanUrl = lan ? `wss://${lan}:${port}?key=${pairKey}` : null;
-  const localUrl = `wss://localhost:${port}?key=${pairKey}`;
+  const proto = tls ? "wss" : "ws";
+  const lanUrl = lan ? `${proto}://${lan}:${port}?key=${pairKey}` : null;
+  const localUrl = `${proto}://localhost:${port}?key=${pairKey}`;
 
   process.stderr.write("\n");
-  process.stderr.write("  claude-app-server  ·  WebSocket\n");
+  process.stderr.write(`  claude-app-server  ·  WebSocket${tls ? " (TLS)" : ""}\n`);
   process.stderr.write("  ─────────────────────────────────\n");
   process.stderr.write(`  Local:    ${localUrl}\n`);
   if (lan) {
-    process.stderr.write(`  Network:  wss://${lan}:${port}\n`);
+    process.stderr.write(`  Network:  ${proto}://${lan}:${port}\n`);
   }
   process.stderr.write(`  Pair Key: ${pairKey}\n`);
   process.stderr.write("\n");
@@ -86,6 +88,7 @@ interface ParsedArgs {
   port: number;
   showQr: boolean;
   debug: boolean;
+  tls: boolean;
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
@@ -95,6 +98,7 @@ function parseArgs(argv: string[]): ParsedArgs {
   let port = 3284;
   let showQr = false;
   let debug = false;
+  let tls = true;
 
   // Check for `start` subcommand as first token
   if (args[0] === "start") {
@@ -112,10 +116,12 @@ function parseArgs(argv: string[]): ParsedArgs {
       port = parseInt(args[++i], 10);
     } else if (args[i] === "--debug") {
       debug = true;
+    } else if (args[i] === "--no-tls") {
+      tls = false;
     }
   }
 
-  return { subcommand, transport, port, showQr, debug };
+  return { subcommand, transport, port, showQr, debug, tls };
 }
 
 // ─── Claude CLI check ─────────────────────────────────────────────────────────
@@ -140,16 +146,16 @@ function checkClaude(): string {
 
 function main() {
   const claudePath = checkClaude();
-  const { transport, port, showQr, debug } = parseArgs(process.argv);
+  const { transport, port, showQr, debug, tls } = parseArgs(process.argv);
   const server = new ClaudeAppServer(claudePath, debug);
 
   if (transport === "ws") {
     const pairKey = generatePairKey();
 
     if (showQr) {
-      printStartBanner(port, pairKey);
+      printStartBanner(port, pairKey, tls);
     }
-    startWebSocket(server, port, { pairKey, debug });
+    startWebSocket(server, port, { pairKey, debug, tls });
   } else {
     startStdio(server);
   }

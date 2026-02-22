@@ -30,6 +30,7 @@
   "scripts": {
     "build": "tsc && chmod +x dist/index.js",
     "start": "node dist/index.js start",
+    "start:no-tls": "node dist/index.js start --no-tls",
     "start:ws": "node dist/index.js --transport ws --port 3284",
     "dev": "pnpm exec ts-node src/index.ts",
     "dev:ws": "pnpm exec ts-node src/index.ts --transport ws --port 3284",

@@ -6,6 +6,7 @@
  */
 
 import * as readline from "readline";
+import * as http from "http";
 import * as https from "https";
 import { URL } from "url";
 import { WebSocketServer, WebSocket } from "ws";
@@ -59,6 +60,7 @@ export function startStdio(server: ClaudeAppServer): void {
 export interface WsOptions {
   pairKey: string;
   debug?: boolean;
+  tls?: boolean;
 }
 
 export function startWebSocket(
@@ -66,20 +68,23 @@ export function startWebSocket(
   port: number,
   options: WsOptions,
 ): void {
-  // Generate a self-signed certificate for TLS
-  const attrs = [{ name: "commonName", value: "localhost" }];
-  const pems = selfsigned.generate(attrs, { days: 1 });
+  const useTls = options.tls !== false;
+  const proto = useTls ? "wss" : "ws";
 
-  const httpsServer = https.createServer({
-    key: pems.private,
-    cert: pems.cert,
-  });
+  let httpServer: http.Server | https.Server;
+  if (useTls) {
+    const attrs = [{ name: "commonName", value: "localhost" }];
+    const pems = selfsigned.generate(attrs, { days: 1 });
+    httpServer = https.createServer({ key: pems.private, cert: pems.cert });
+  } else {
+    httpServer = http.createServer();
+  }
 
-  const wss = new WebSocketServer({ server: httpsServer });
+  const wss = new WebSocketServer({ server: httpServer });
 
   wss.on("connection", (ws: WebSocket, req) => {
     // ─── Pair key validation ──────────────────────────────────────────
-    const reqUrl = new URL(req.url ?? "/", `https://localhost:${port}`);
+    const reqUrl = new URL(req.url ?? "/", `${proto === "wss" ? "https" : "http"}://localhost:${port}`);
     const clientKey = reqUrl.searchParams.get("key");
     if (options.debug) {
       process.stderr.write(
@@ -106,9 +111,9 @@ export function startWebSocket(
     });
   });
 
-  httpsServer.listen(port, () => {
+  httpServer.listen(port, () => {
     process.stderr.write(
-      `[claude-app-server] listening on wss://0.0.0.0:${port}\n`,
+      `[claude-app-server] listening on ${proto}://0.0.0.0:${port}\n`,
     );
   });
 }
