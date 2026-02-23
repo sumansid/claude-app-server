@@ -1,6 +1,6 @@
 {
   "name": "claude-app-server",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Claude Code App Server — A JSON-RPC 2.0 server wrapping Claude Code capabilities. Equivalent to the OpenAI Codex App Server.",
   "license": "MIT",
   "type": "commonjs",
