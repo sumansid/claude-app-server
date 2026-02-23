@@ -74,7 +74,11 @@ export function startWebSocket(
   let httpServer: http.Server | https.Server;
   if (useTls) {
     const attrs = [{ name: "commonName", value: "localhost" }];
-    const pems = selfsigned.generate(attrs, { days: 1 });
+    const pems = selfsigned.generate(attrs, {
+      days: 1,
+      keySize: 2048,
+      algorithm: "sha256",
+    });
     httpServer = https.createServer({ key: pems.private, cert: pems.cert });
   } else {
     httpServer = http.createServer();
