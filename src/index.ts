@@ -20,7 +20,52 @@ import { execSync } from "child_process";
 import { randomBytes } from "crypto";
 import { networkInterfaces } from "os";
 import { realpathSync } from "fs";
+import { join } from "path";
+import { readFileSync } from "fs";
 import qr from "qrcode-terminal";
+
+// ─── Version & help (run before any heavy setup) ────────────────────────────────
+
+function getVersion(): string {
+  const pkgPath = join(__dirname, "..", "package.json");
+  try {
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+    return pkg.version ?? "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+const HELP = `
+claude-app-server — JSON-RPC 2.0 server wrapping Claude Code capabilities.
+
+USAGE
+  claude-app-server                    Run in stdio mode (default)
+  claude-app-server start              Run WebSocket server with QR code
+  claude-app-server start [OPTIONS]    WebSocket server with options
+  claude-app-server [OPTIONS]          stdio or WebSocket with legacy flags
+
+SUBCOMMANDS
+  start     Start WebSocket server on port 3284, show QR code to connect
+
+OPTIONS
+  -h, --help        Show this help message
+  -V, --version     Show version number
+  --transport ws     Use WebSocket transport (implies stdio otherwise)
+  --port <number>   WebSocket port (default: 3284)
+  --no-tls          Use plain WebSocket (no TLS)
+  --debug           Enable debug logging
+
+EXAMPLES
+  claude-app-server                          # stdio, e.g. for IDE integration
+  claude-app-server start                    # wss + QR code on port 3284
+  claude-app-server start --no-tls           # plain ws (no TLS)
+  claude-app-server start --port 4000        # custom port
+  claude-app-server --transport ws           # WebSocket (legacy, no QR)
+
+Requires the Claude Code CLI. Install: https://claude.ai/code
+Then log in: claude auth
+`.trim();
 
 // ─── Network helpers ──────────────────────────────────────────────────────────
 
@@ -145,6 +190,16 @@ function checkClaude(): string {
 // ─── Entry ────────────────────────────────────────────────────────────────────
 
 function main() {
+  const args = process.argv.slice(2);
+  if (args.includes("--help") || args.includes("-h")) {
+    process.stdout.write(HELP + "\n");
+    process.exit(0);
+  }
+  if (args.includes("--version") || args.includes("-V")) {
+    process.stdout.write(getVersion() + "\n");
+    process.exit(0);
+  }
+
   const claudePath = checkClaude();
   const { transport, port, showQr, debug, tls } = parseArgs(process.argv);
   const server = new ClaudeAppServer(claudePath, debug);
